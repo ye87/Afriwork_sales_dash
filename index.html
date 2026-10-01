@@ -6,6 +6,7 @@
 <title>Afriwork Sales Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
+  /* Layout: filter bar → KPI tiles → agent×day grid → follow-ups → data-quality checks → charts → entry log */
   :root {
     color-scheme: light;
     --bg: #f4f4f2;
@@ -19,9 +20,9 @@
     --s2: #eb6834; /* reactivation */
     --s3: #1baf7a; /* lead-gen */
     --bar: #2a78d6;
-    --warn-bg: #fff4dc;
-    --warn: #8a5a00;
-    --bad: #c62f2e;
+    --good: #0f7a3a; --good-bg: #e3f4e8;
+    --warn: #8a5a00; --warn-bg: #fff1d1;
+    --bad: #b42322;  --bad-bg: #fde7e6;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -29,7 +30,9 @@
       --bg: #111110; --surface: #1a1a19; --border: #2e2e2b;
       --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --grid: #2a2a27;
       --s1: #3987e5; --s2: #d95926; --s3: #199e70; --bar: #3987e5;
-      --warn-bg: #3a2c0a; --warn: #f2c25c; --bad: #e66767;
+      --good: #5fd08a; --good-bg: #12301d;
+      --warn: #f2c25c; --warn-bg: #3a2c0a;
+      --bad: #ff8a85;  --bad-bg: #3d1716;
     }
   }
   :root[data-theme="dark"] {
@@ -37,21 +40,25 @@
     --bg: #111110; --surface: #1a1a19; --border: #2e2e2b;
     --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --grid: #2a2a27;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --bar: #3987e5;
-    --warn-bg: #3a2c0a; --warn: #f2c25c; --bad: #e66767;
+    --good: #5fd08a; --good-bg: #12301d;
+    --warn: #f2c25c; --warn-bg: #3a2c0a;
+    --bad: #ff8a85;  --bad-bg: #3d1716;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 20px 16px 48px; }
+  .page { max-width: 1280px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 10px; }
+  .page > * { min-width: 0; }
   header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
   h1 { font-size: 20px; margin: 0; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
+  h2 { font-size: 15px; margin: 0; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .sub { color: var(--text-2); font-size: 12px; }
   .filters {
     display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-    margin: 16px 0; padding: 10px; background: var(--surface);
+    padding: 10px; background: var(--surface);
     border: 1px solid var(--border); border-radius: 10px;
   }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
@@ -65,36 +72,70 @@
     border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px;
   }
   .btn { cursor: pointer; }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
   .spacer { flex: 1; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
   .kpi .label { color: var(--text-2); font-size: 12px; }
   .kpi .value { font-size: 26px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .kpi .note { color: var(--muted); font-size: 12px; }
+  .kpi.alert { border-color: var(--bad); }
+  .kpi.alert .value { color: var(--bad); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
-  .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 10px; }
-  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
-  .chartbox { position: relative; height: 280px; }
+  .grid2 { display: grid; grid-template-columns: 3fr 2fr; gap: 10px; }
+  .grid2 > * { min-width: 0; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .chartbox { position: relative; height: 260px; }
   .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-2); font-size: 12px; margin-bottom: 8px; }
-  .section { margin-top: 10px; }
   .tablewrap { overflow-x: auto; }
   .tablewrap.tall { max-height: 440px; overflow-y: auto; }
-  thead th { position: sticky; top: 0; background: var(--surface); }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
   th { color: var(--text-2); font-weight: 600; font-size: 12px; }
+  thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
   td.num, th.num { text-align: right; }
   td.summary { white-space: normal; min-width: 220px; color: var(--text-2); }
   .inbar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
   .inbar span.b { height: 8px; border-radius: 0 4px 4px 0; background: var(--bar); }
-  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--text-2); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+  .pill.good { background: var(--good-bg); color: var(--good); border-color: transparent; }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  .pill.bad  { background: var(--bad-bg);  color: var(--bad);  border-color: transparent; }
   .overdue { color: var(--bad); font-weight: 600; }
-  .banner { background: var(--warn-bg); color: var(--warn); padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; display: none; }
   .empty { color: var(--muted); padding: 12px 0; }
+  .loaderr { background: var(--bad-bg); color: var(--bad); padding: 10px 12px; border-radius: 8px; }
+
+  /* agent × day grid */
+  table.matrix th.day, table.matrix td.cell { text-align: center; min-width: 52px; }
+  table.matrix th:first-child, table.matrix td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+  table.matrix thead th:first-child { z-index: 2; }
+  td.cell .n { font-weight: 650; display: block; }
+  td.cell .x { display: block; font-size: 11px; color: var(--bad); }
+  td.cell.met { background: var(--good-bg); color: var(--good); }
+  td.cell.under { background: var(--warn-bg); color: var(--warn); }
+  td.cell.off { color: var(--muted); }
+  th.day.weekend { color: var(--muted); }
+
+  /* data-quality checks */
+  .checks { display: grid; gap: 6px; }
+  details.check { border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+  details.check > summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px;
+  }
+  details.check > summary::-webkit-details-marker { display: none; }
+  details.check > summary::before { content: "›"; color: var(--muted); transition: transform .15s; display: inline-block; width: 8px; flex: none; }
+  details.check[open] > summary::before { transform: rotate(90deg); }
+  details.check .title { font-weight: 600; }
+  details.check .why { color: var(--text-2); font-size: 12px; }
+  details.check .count { margin-left: auto; }
+  details.check .body { padding: 0 12px 10px; }
+  details.check.ok { opacity: .65; }
+  @media (prefers-reduced-motion: reduce) { details.check > summary::before { transition: none; } }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="page">
   <header>
     <h1>Afriwork Sales Dashboard</h1>
     <div class="sub" id="updated">Loading…</div>
@@ -116,63 +157,96 @@
     <button class="btn" id="refresh">Refresh</button>
   </div>
 
-  <div class="banner" id="banner"></div>
+  <div class="loaderr" id="loaderr" hidden></div>
 
   <div class="kpis" id="kpis"></div>
 
-  <div class="grid2">
-    <div class="card">
-      <h2>Daily activity</h2>
-      <div class="legend">
-        <span><span class="dot" style="background:var(--s1)"></span>Sales calls</span>
-        <span><span class="dot" style="background:var(--s2)"></span>Reactivation calls</span>
-        <span><span class="dot" style="background:var(--s3)"></span>Lead-gen contacts</span>
+  <div class="card">
+    <div class="card-head">
+      <h2>Successful calls per agent per day</h2>
+      <div class="seg" id="matrixSrc" role="group" aria-label="Which tabs to count">
+        <button data-src="all" aria-pressed="true">All tabs</button>
+        <button data-src="sales">Sales_call_log</button>
+        <button data-src="react">Reactivation</button>
+        <button data-src="lead">LEAD-GEN</button>
       </div>
-      <div class="chartbox"><canvas id="daily"></canvas></div>
     </div>
-    <div class="card">
-      <h2>Sales call outcomes</h2>
-      <div class="chartbox"><canvas id="outcomes"></canvas></div>
+    <div class="legend">
+      <span><span class="pill good">20+</span> target met</span>
+      <span><span class="pill warn">1–19</span> under target</span>
+      <span><span style="color:var(--bad)">+3 not counted</span> = rows with a date but no valid phone number (includes empty rows)</span>
     </div>
+    <div class="tablewrap"><table class="matrix" id="matrix"></table></div>
   </div>
 
-  <div class="card section">
-    <h2>Agent leaderboard</h2>
+  <div class="card">
+    <div class="card-head"><h2>Agent summary</h2><span class="sub">Successful call = has a date and a phone number. Complete = successful + call summary.</span></div>
     <div class="tablewrap"><table id="agents"></table></div>
   </div>
 
   <div class="grid2">
     <div class="card">
-      <h2>Follow-ups due <span class="sub">(from Sales_call_log, not marked Done)</span></h2>
+      <div class="card-head"><h2>Overdue follow-ups</h2><span class="sub" id="fuNote"></span></div>
       <div class="tablewrap tall"><table id="followups"></table></div>
     </div>
     <div class="card">
-      <h2>Reactivation responses</h2>
-      <div class="chartbox"><canvas id="react"></canvas></div>
+      <div class="card-head"><h2>Interested, but no follow-up date</h2></div>
+      <div class="tablewrap tall"><table id="nofollow"></table></div>
     </div>
   </div>
 
-  <div class="card section">
-    <h2>Latest entries</h2>
+  <div class="card">
+    <div class="card-head"><h2>Warnings and unfilled info</h2><span class="sub">Click a line to see the rows. Row numbers match the Google Sheet.</span></div>
+    <div class="checks" id="checks"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Successful calls per day</h2>
+      <div class="legend" style="margin-top:8px">
+        <span><span class="dot" style="background:var(--s1)"></span>Sales_call_log</span>
+        <span><span class="dot" style="background:var(--s2)"></span>Reactivation</span>
+        <span><span class="dot" style="background:var(--s3)"></span>LEAD-GEN</span>
+      </div>
+      <div class="chartbox"><canvas id="daily"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Sales call outcomes</h2>
+      <div class="chartbox" style="margin-top:8px"><canvas id="outcomes"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>All entries</h2><span class="sub">Newest first. Empty date-only rows are left out.</span></div>
     <div class="tablewrap tall"><table id="recent"></table></div>
   </div>
 </div>
 
 <script>
+// ---------- settings you may want to change ----------
+const DAILY_TARGET = 20;      // successful calls per agent per day
+const MIN_SUMMARY = 15;       // shorter call summaries are flagged as too short
+// Map spelling variants of agent names to one name, lowercase keys. Example: { "kal": "Kalkidan" }
+const AGENT_ALIASES = {};
+// Fix common typos in outcome / response values, lowercase keys.
+const VALUE_FIXES = { "already regsitered": "already registered", "not intersted": "not interested", "client lost / not intersted": "client lost / not interested" };
+
+// "api" = Vercel function (/api/sheet). "drive" = claude.ai Artifact reading the sheet via the viewer's Google Drive connector.
+const SOURCE = "api";
+const SHEET_ID = "1yGSvua5cQm0Czz4_Mr-dW9WmjgDP1PWVcP14n7pX8z0";
+
 const TABS = ["Sales_call_log", "Reactivation", "LEAD-GEN"];
 const SOURCES = {
-  sales: { label: "Sales call", color: "--s1" },
+  sales: { label: "Sales_call_log", color: "--s1" },
   react: { label: "Reactivation", color: "--s2" },
-  lead:  { label: "Lead-gen", color: "--s3" },
+  lead:  { label: "LEAD-GEN", color: "--s3" },
 };
 const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
 const DAY = 86400000;
 
-let raw = null;            // { Sales_call_log: [...], ... }
-let activities = [];       // normalized rows
-let followups = [];
+let entries = [];          // every touched row from all tabs, normalized
 let charts = {};
-let state = { range: "7d", from: null, to: null, agent: "" };
+let state = { range: "7d", from: null, to: null, agent: "", matrixSrc: "all" };
 
 // ---------- helpers ----------
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -183,18 +257,20 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}
 const fmtDate = (d) => d ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 const money = (n) => n ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " ETB" : "0";
 const num = (s) => { const n = parseFloat(String(s || "").replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : 0; };
+const blank = (s) => !String(s ?? "").trim();
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 // Look up a column by any of several header spellings.
 function col(row, ...names) {
   const keys = Object.keys(row);
   for (const n of names) {
     const k = keys.find((k) => norm(k) === norm(n));
-    if (k !== undefined && row[k] !== "") return row[k];
+    if (k !== undefined && !blank(row[k])) return String(row[k]).trim();
   }
   return "";
 }
 
-// Handles 09-24-2026, 26-Sep-2026, 9/24/2026, 2026-09-24, "4/8/2026 10:32:05", Sep-27.
+// Handles 09-24-2026, 26-Sep-2026, 9/24/2026, 2026-09-24, "4/8/2026 10:32:05", Sep-27, Sep 27, September 9.
 function parseDate(s) {
   s = String(s || "").trim().replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*([ap]m)?$/i, "");
   if (!s) return null;
@@ -219,18 +295,31 @@ function parseDate(s) {
 function cleanAgent(s) {
   s = String(s || "").trim().replace(/\s+/g, " ");
   if (!s || /^not called$/i.test(s)) return "";
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  const alias = AGENT_ALIASES[s.toLowerCase()];
+  if (alias) return alias;
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+// "NO answer", "no answer ", "No Answer" → "No answer"
+function cleanValue(s) {
+  s = String(s || "").trim().replace(/\s+/g, " ");
+  if (!s) return "";
+  const low = VALUE_FIXES[s.toLowerCase()] || s.toLowerCase();
+  return low.charAt(0).toUpperCase() + low.slice(1);
+}
+
+// The Vercel API sends "valid"/"invalid"/""; the Drive path sees the raw number.
+function phoneQuality(v) {
+  v = String(v || "").trim();
+  if (!v || v === "valid" || v === "invalid") return v;
+  return /e\+/i.test(v) || v.replace(/\D/g, "").length >= 7 ? "valid" : "invalid";
 }
 
 const isYes = (s) => /^y(es)?$/i.test(String(s).trim());
+const isNo = (s) => /^no?$/i.test(String(s).trim());
 const isInterested = (s) => /interest/i.test(s) && !/not\s*interest/i.test(s);
 
-// ---------- data ----------
-// "api" = Vercel function (/api/sheet). "drive" = claude.ai Artifact reading the sheet via the viewer's Google Drive connector.
-const SOURCE = "api";
-const SHEET_ID = "1yGSvua5cQm0Czz4_Mr-dW9WmjgDP1PWVcP14n7pX8z0";
-const PRIVATE_COLUMN = /phone|e-?mail/i;
-
+// ---------- data loading ----------
 async function fetchFromApi() {
   const key = sessionStorageGet("dashKey");
   const results = await Promise.all(TABS.map(async (tab) => {
@@ -254,19 +343,14 @@ const DRIVE_ERRORS = {
 async function fetchFromDrive() {
   const mcp = window.claude?.use ? await window.claude.use("mcp") : null;
   if (!mcp) throw new Error("Open this dashboard on claude.ai to load the sheet through Google Drive.");
+  const input = { fileId: SHEET_ID, exportMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
   let res;
   try {
-    res = await mcp.callTool("Google Drive", "download_file_content",
-      { fileId: SHEET_ID, exportMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-      { cache: { staleTime: 60000 } });
+    res = await mcp.callTool("Google Drive", "download_file_content", input, { cache: { staleTime: 60000 } });
   } catch (e) {
-    if (e?.retryable) {
-      await new Promise((r) => setTimeout(r, e.retryAfterMs || 1500 + Math.random() * 1500));
-      res = await mcp.callTool("Google Drive", "download_file_content",
-        { fileId: SHEET_ID, exportMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    } else {
-      throw new Error(DRIVE_ERRORS[e?.code] || e?.message || "Google Drive request failed.");
-    }
+    if (!e?.retryable) throw new Error(DRIVE_ERRORS[e?.code] || e?.message || "Google Drive request failed.");
+    await new Promise((r) => setTimeout(r, e.retryAfterMs || 1500 + Math.random() * 1500));
+    res = await mcp.callTool("Google Drive", "download_file_content", input);
   }
   let p = res.payload;
   if (typeof p === "string") { try { p = JSON.parse(p); } catch {} }
@@ -277,85 +361,99 @@ async function fetchFromDrive() {
   for (const tab of TABS) {
     const ws = wb.Sheets[tab];
     const rows = ws ? XLSX.utils.sheet_to_json(ws, { raw: false, defval: "" }) : [];
-    out[tab] = rows.map((r) => Object.fromEntries(Object.entries(r)
-      .filter(([k]) => !PRIVATE_COLUMN.test(k) && !/^__EMPTY/.test(k))
-      .map(([k, v]) => [k.trim(), String(v).trim()])));
+    out[tab] = rows.map((r) => {
+      const o = { __row: r.__rowNum__ + 1 };
+      for (const [k, v] of Object.entries(r)) {
+        if (/e-?mail/i.test(k) || /^__EMPTY/.test(k)) continue;
+        o[k.trim()] = /phone/i.test(k) ? phoneQuality(v) : String(v).trim();
+      }
+      return o;
+    });
   }
   return out;
 }
 
 async function load() {
   document.getElementById("updated").textContent = "Loading…";
-  raw = SOURCE === "drive" ? await fetchFromDrive() : await fetchFromApi();
-  normalize();
+  const raw = SOURCE === "drive" ? await fetchFromDrive() : await fetchFromApi();
+  normalize(raw);
   fillAgents();
   render();
+  document.getElementById("loaderr").hidden = true;
   document.getElementById("updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function normalize() {
-  activities = []; followups = [];
-  const skipped = { sales: 0, react: 0, lead: 0 };
+// One shape for every tab. Untouched rows (e.g. the uncalled Reactivation backlog) are skipped.
+function normalize(raw) {
+  entries = [];
+  const t = today();
 
   for (const r of raw.Sales_call_log || []) {
-    const agent = cleanAgent(col(r, "Sales Agent Name"));
-    const company = col(r, "Company / Lead name", "Company/Lead name");
-    const date = parseDate(col(r, "Date"));
-    if (!date) { if (agent || company) skipped.sales++; continue; }
-    const outcome = col(r, "Call outcome");
-    activities.push({
-      src: "sales", date, agent, company, outcome,
-      stage: col(r, "Stage"), dm: isYes(col(r, "Decision maker reached?")),
-      interested: isInterested(outcome),
-      won: num(col(r, "Won revenue")), est: num(col(r, "Estimated deal value")),
+    const e = {
+      src: "sales", row: r.__row,
+      dateRaw: col(r, "Date"), agent: cleanAgent(col(r, "Sales Agent Name")),
+      company: col(r, "Company / Lead name", "Company/Lead name"),
+      phone: phoneQuality(col(r, "Phone Number Called")),
+      outcome: cleanValue(col(r, "Call outcome")), stage: cleanValue(col(r, "Stage")),
+      dmRaw: col(r, "Decision maker reached?"),
       summary: col(r, "Call Summary (Mandatory)", "Call Summary"),
-    });
-    const fu = parseDate(col(r, "Next Follow-up Date"));
-    const fuStatus = col(r, "Follow-up Status");
-    if (fu && !/done|closed|complete/i.test(fuStatus)) {
-      followups.push({ due: fu, agent, company, outcome, stage: col(r, "Stage"), status: fuStatus });
-    }
+      est: num(col(r, "Estimated deal value")), wonRaw: col(r, "Won revenue"),
+      fuRaw: col(r, "Next Follow-up Date"), fuStatus: col(r, "Follow-up Status"),
+    };
+    if (!e.dateRaw && !e.company && !e.outcome && !e.summary && !e.agent && !e.phone) continue;
+    e.interested = isInterested(e.outcome);
+    entries.push(e);
   }
 
   for (const r of raw.Reactivation || []) {
-    const date = parseDate(col(r, "Date called"));
-    if (!date) { if (col(r, "Status") || col(r, "Sales Agent Name")) skipped.react++; continue; } // blank rows are the uncalled backlog
-    const interest = col(r, "Interest level");
-    activities.push({
-      src: "react", date, agent: cleanAgent(col(r, "Sales Agent Name")), company: col(r, "name"),
-      outcome: col(r, "Response") || col(r, "Status"), status: col(r, "Status"),
-      response: col(r, "Response"), interest,
-      dm: false, interested: /high|medium/i.test(interest),
-      won: num(col(r, "Won revenue amount")), est: 0,
+    const e = {
+      src: "react", row: r.__row,
+      dateRaw: col(r, "Date called"), agent: cleanAgent(col(r, "Sales Agent Name")),
+      company: col(r, "name"), phone: phoneQuality(col(r, "phone")),
+      status: cleanValue(col(r, "Status")), interest: cleanValue(col(r, "Interest level")),
+      response: cleanValue(col(r, "Response")),
       summary: col(r, "Call summary (MANDATORY)", "Call summary"),
-    });
+      wonRaw: col(r, "Won revenue amount"),
+    };
+    // name + phone are pre-filled for every lead; the row is "touched" once an agent fills anything.
+    if (!e.dateRaw && !e.status && !e.agent && !e.response && !e.summary && !e.interest) continue;
+    e.outcome = e.response || e.status;
+    e.interested = /high|medium/i.test(e.interest);
+    entries.push(e);
   }
 
   for (const r of raw["LEAD-GEN"] || []) {
-    const agent = cleanAgent(col(r, "Sales Agent Name") || col(r, "Lead Generated By"));
-    const company = col(r, "Company /Lead name", "Company / Lead name");
-    const date = parseDate(col(r, "Contact date"));
-    if (!date) { if (company) skipped.lead++; continue; }
-    activities.push({
-      src: "lead", date, agent, company,
-      outcome: col(r, "Response") || col(r, "Status"), stage: col(r, "Stage"),
-      dm: isYes(col(r, "Decision Maker Reached")), interested: isInterested(col(r, "Response") + " " + col(r, "Status")),
-      won: 0, est: 0, summary: col(r, "Notes (Mandatory)", "Notes"),
-    });
+    const e = {
+      src: "lead", row: r.__row,
+      dateRaw: col(r, "Contact date"), agent: cleanAgent(col(r, "Sales Agent Name") || col(r, "Lead Generated By")),
+      company: col(r, "Company /Lead name", "Company / Lead name"),
+      phone: phoneQuality(col(r, "Contact person Phone")),
+      outcome: cleanValue(col(r, "Response") || col(r, "Status")), stage: cleanValue(col(r, "Stage")),
+      dmRaw: col(r, "Decision Maker Reached"), summary: col(r, "Notes (Mandatory)", "Notes"),
+    };
+    if (!e.dateRaw && !e.company && !e.agent) continue;
+    e.interested = isInterested(e.outcome);
+    entries.push(e);
   }
 
-  const banner = document.getElementById("banner");
-  const msgs = [];
-  if (skipped.sales) msgs.push(`${skipped.sales} Sales_call_log row(s) have no readable Date`);
-  if (skipped.react) msgs.push(`${skipped.react} Reactivation row(s) have a Status/Agent but no Date called`);
-  if (skipped.lead) msgs.push(`${skipped.lead} LEAD-GEN row(s) have no readable Contact date`);
-  banner.style.display = msgs.length ? "block" : "none";
-  banner.textContent = msgs.length ? msgs.join(" · ") + " — they are not counted. Ask agents to always fill the date." : "";
+  for (const e of entries) {
+    e.date = parseDate(e.dateRaw);
+    e.won = num(e.wonRaw);
+    e.est = e.est || 0;
+    e.dm = isYes(e.dmRaw);
+    e.successful = !!e.date && e.phone === "valid";
+    e.complete = e.successful && !blank(e.summary);
+    // A date (maybe an agent) but nothing about the call itself: usually a row pre-filled ahead of time.
+    e.shell = !!e.dateRaw && e.phone === "" && !e.company && !e.outcome && blank(e.summary);
+    e.fu = e.fuRaw ? parseDate(e.fuRaw) : null;
+    e.fuDone = /done|closed|complete/i.test(e.fuStatus || "");
+    e.overdue = !!e.fu && !e.fuDone && e.fu < t;
+  }
 }
 
 function fillAgents() {
   const sel = document.getElementById("agent");
-  const names = [...new Set(activities.map((a) => a.agent).filter(Boolean))].sort();
+  const names = [...new Set(entries.map((a) => a.agent).filter(Boolean))].sort();
   sel.innerHTML = `<option value="">All agents</option>` + names.map((n) => `<option ${n === state.agent ? "selected" : ""}>${esc(n)}</option>`).join("");
 }
 
@@ -370,62 +468,236 @@ function rangeBounds() {
     case "month": return [new Date(t.getFullYear(), t.getMonth(), 1), t];
     case "custom": return [state.from || new Date(0), state.to || t];
     default: {
-      const ds = activities.map((a) => +a.date);
+      const ds = entries.filter((e) => e.date).map((e) => +e.date);
       return ds.length ? [new Date(Math.min(...ds)), new Date(Math.max(...ds, +t))] : [t, t];
     }
   }
 }
 
-function filtered() {
-  const [from, to] = rangeBounds();
-  return activities.filter((a) => a.date >= from && a.date <= to && (!state.agent || a.agent === state.agent));
-}
+const byAgent = (e) => !state.agent || e.agent === state.agent;
+function inRange(e) { const [from, to] = rangeBounds(); return e.date && e.date >= from && e.date <= to; }
+// Rows without a readable date can't be placed in a period, so data-quality checks always include them.
+const forChecks = (e) => byAgent(e) && (!e.date || inRange(e));
 
 // ---------- render ----------
 function render() {
-  const rows = filtered();
   const [from, to] = rangeBounds();
   document.getElementById("from").value = iso(from);
   document.getElementById("to").value = iso(to);
   document.querySelectorAll("#ranges button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.range === state.range)));
+  document.querySelectorAll("#matrixSrc button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.src === state.matrixSrc)));
 
-  renderKpis(rows, from, to);
-  renderDaily(rows, from, to);
-  renderOutcomes(rows);
+  const rows = entries.filter((e) => byAgent(e) && inRange(e));
+  const checks = runChecks();
+  renderKpis(rows, from, to, checks);
+  renderMatrix(rows, from, to);
   renderAgents(rows);
   renderFollowups();
-  renderReact(rows);
+  renderChecks(checks);
+  renderDaily(rows, from, to);
+  renderOutcomes(rows);
   renderRecent(rows);
 }
 
-function renderKpis(rows, from, to) {
-  const by = (s) => rows.filter((r) => r.src === s);
-  const sales = by("sales"), react = by("react"), lead = by("lead");
+function dayList(from, to) {
+  const out = [];
+  const start = state.range === "all" ? new Date(Math.max(+from, +to - 30*DAY)) : from; // keep the grid readable
+  for (let d = new Date(start); d <= to; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) out.push(d);
+  return out;
+}
+
+function renderKpis(rows, from, to, checks) {
+  const ok = rows.filter((r) => r.successful);
   const days = Math.max(1, Math.round((to - from) / DAY) + 1);
-  const dmRate = sales.length ? Math.round(100 * sales.filter((r) => r.dm).length / sales.length) : 0;
-  const won = rows.reduce((s, r) => s + r.won, 0);
-  const pipeline = sales.reduce((s, r) => s + r.est, 0);
-  const t = today();
-  const due = followups.filter((f) => f.due <= t && (!state.agent || f.agent === state.agent)).length;
+  const notCounted = rows.filter((r) => !r.successful).length;
+  const completePct = ok.length ? Math.round(100 * ok.filter((r) => r.complete).length / ok.length) : 0;
+  const agentDays = new Map();
+  ok.forEach((r) => { const k = r.agent + "|" + iso(r.date); agentDays.set(k, (agentDays.get(k) || 0) + 1); });
+  const met = [...agentDays.values()].filter((n) => n >= DAILY_TARGET).length;
+  const overdue = entries.filter((e) => e.overdue && byAgent(e)).length;
+  const issues = checks.reduce((s, c) => s + c.rows.length, 0);
+  const sales = ok.filter((r) => r.src === "sales");
+  const dmPct = sales.length ? Math.round(100 * sales.filter((r) => r.dm).length / sales.length) : 0;
   const tiles = [
-    ["Total activities", rows.length.toLocaleString(), days > 1 ? `${(rows.length / days).toFixed(1)} per day` : ""],
-    ["Sales calls", sales.length.toLocaleString(), "", "--s1"],
-    ["Reactivation calls", react.length.toLocaleString(), "", "--s2"],
-    ["Lead-gen contacts", lead.length.toLocaleString(), "", "--s3"],
-    ["Decision maker reached", dmRate + "%", "of sales calls"],
+    ["Successful calls", ok.length.toLocaleString(), days > 1 ? `${(ok.length / days).toFixed(1)} per day` : "date + phone number filled"],
+    ["Rows not counted", notCounted.toLocaleString(), `${rows.filter((r) => r.shell).length} empty, ${notCounted - rows.filter((r) => r.shell).length} missing phone`, notCounted > 0],
+    ["Complete", completePct + "%", "of successful calls have a summary"],
+    ["Days at target", `${met} of ${agentDays.size}`, `agent-days with ${DAILY_TARGET}+ calls`],
+    ["Decision maker reached", dmPct + "%", "of successful sales calls"],
     ["Interested", rows.filter((r) => r.interested).length.toLocaleString(), "sales + reactivation (high/med)"],
-    ["Won revenue", money(won), ""],
-    ["Pipeline (est.)", money(pipeline), "estimated deal value"],
-    ["Follow-ups due", due.toLocaleString(), "today or overdue"],
+    ["Won revenue", money(rows.reduce((s, r) => s + r.won, 0)), "in this period"],
+    ["Overdue follow-ups", overdue.toLocaleString(), "all dates", overdue > 0],
+    ["Data warnings", issues.toLocaleString(), "see the list below", issues > 0],
   ];
-  document.getElementById("kpis").innerHTML = tiles.map(([l, v, n, c]) => `
-    <div class="card kpi">
-      <div class="label">${c ? `<span class="dot" style="background:var(${c})"></span>` : ""}${l}</div>
+  document.getElementById("kpis").innerHTML = tiles.map(([l, v, n, alert]) => `
+    <div class="card kpi${alert ? " alert" : ""}">
+      <div class="label">${l}</div>
       <div class="value">${v}</div>
       <div class="note">${n || "&nbsp;"}</div>
     </div>`).join("");
 }
 
+function renderMatrix(rows, from, to) {
+  const srcOk = (r) => state.matrixSrc === "all" || r.src === state.matrixSrc;
+  const list = rows.filter(srcOk);
+  const days = dayList(from, to);
+  const keys = days.map(iso);
+  const NA = "(no agent)";
+  const agents = [...new Set(list.map((r) => r.agent || NA))].sort((a, b) => a === NA ? 1 : b === NA ? -1 : a.localeCompare(b));
+  const el = document.getElementById("matrix");
+  if (!agents.length) { el.innerHTML = `<tr><td class="empty">No calls logged in this period.</td></tr>`; return; }
+  const cell = {}; // agent|day → {ok, bad}
+  list.forEach((r) => {
+    const k = (r.agent || NA) + "|" + iso(r.date);
+    const c = cell[k] || (cell[k] = { ok: 0, bad: 0 });
+    r.successful ? c.ok++ : c.bad++;
+  });
+  const activeDay = Object.fromEntries(keys.map((d) => [d, agents.some((a) => cell[a + "|" + d]?.ok)]));
+  el.innerHTML = `<thead><tr><th>Agent</th>${days.map((d) => `<th class="day${[0, 6].includes(d.getDay()) ? " weekend" : ""}">${d.toLocaleDateString(undefined, { weekday: "short" })}<br>${fmtDate(d)}</th>`).join("")}<th class="num">Total</th><th class="num">Avg / active day</th></tr></thead>
+    <tbody>${agents.map((a) => {
+      let total = 0, active = 0;
+      const tds = keys.map((d) => {
+        const c = cell[a + "|" + d];
+        const ok = c?.ok || 0, bad = c?.bad || 0;
+        total += ok; if (ok) active++;
+        const cls = ok >= DAILY_TARGET ? "met" : ok > 0 ? "under" : "off";
+        const label = `${a}, ${d}: ${ok} successful${bad ? `, ${bad} not counted` : ""}`;
+        return `<td class="cell ${cls}" title="${esc(label)}"><span class="n">${ok || (activeDay[d] ? "0" : "–")}</span>${bad ? `<span class="x">+${bad} not counted</span>` : ""}</td>`;
+      }).join("");
+      return `<tr><td>${esc(a)}</td>${tds}<td class="num"><strong>${total}</strong></td><td class="num">${active ? (total / active).toFixed(1) : "–"}</td></tr>`;
+    }).join("")}</tbody>`;
+}
+
+function renderAgents(rows) {
+  const NA = "(no agent)";
+  const m = new Map();
+  rows.forEach((r) => {
+    const k = r.agent || NA;
+    const a = m.get(k) || { agent: k, ok: 0, bad: 0, complete: 0, sales: 0, react: 0, lead: 0, dm: 0, interested: 0, won: 0, days: new Map() };
+    if (r.successful) {
+      a.ok++; a[r.src]++; if (r.complete) a.complete++; if (r.dm) a.dm++;
+      const d = iso(r.date); a.days.set(d, (a.days.get(d) || 0) + 1);
+    } else a.bad++;
+    if (r.interested) a.interested++;
+    a.won += r.won;
+    m.set(k, a);
+  });
+  const list = [...m.values()].sort((a, b) => b.ok - a.ok);
+  const max = Math.max(1, ...list.map((a) => a.ok));
+  const el = document.getElementById("agents");
+  if (!list.length) { el.innerHTML = `<tr><td class="empty">No activity in this period.</td></tr>`; return; }
+  const overdueBy = {};
+  entries.filter((e) => e.overdue).forEach((e) => { const k = e.agent || NA; overdueBy[k] = (overdueBy[k] || 0) + 1; });
+  el.innerHTML = `<thead><tr><th>Agent</th><th class="num">Successful calls</th><th class="num">Avg / active day</th><th class="num">Days at ${DAILY_TARGET}+</th><th class="num">Not counted</th><th class="num">Complete</th><th class="num">Sales / React / Lead</th><th class="num">DM reached</th><th class="num">Interested</th><th class="num">Overdue FU</th><th class="num">Won revenue</th></tr></thead>
+    <tbody>${list.map((a) => {
+      const activeDays = a.days.size;
+      const met = [...a.days.values()].filter((n) => n >= DAILY_TARGET).length;
+      const pct = a.ok ? Math.round(100 * a.complete / a.ok) : 0;
+      const pctCls = pct >= 90 ? "good" : pct >= 70 ? "warn" : "bad";
+      const od = overdueBy[a.agent] || 0;
+      return `<tr>
+        <td>${esc(a.agent)}</td>
+        <td class="num"><div class="inbar"><span class="b" style="width:${Math.round(80 * a.ok / max)}px"></span><strong>${a.ok}</strong></div></td>
+        <td class="num">${activeDays ? (a.ok / activeDays).toFixed(1) : "–"}</td>
+        <td class="num">${met} / ${activeDays}</td>
+        <td class="num">${a.bad ? `<span class="pill bad">${a.bad}</span>` : "0"}</td>
+        <td class="num">${a.ok ? `<span class="pill ${pctCls}">${pct}%</span>` : "–"}</td>
+        <td class="num">${a.sales} / ${a.react} / ${a.lead}</td>
+        <td class="num">${a.dm}</td><td class="num">${a.interested}</td>
+        <td class="num">${od ? `<span class="pill bad">${od}</span>` : "0"}</td>
+        <td class="num">${money(a.won)}</td>
+      </tr>`;
+    }).join("")}</tbody>`;
+}
+
+function renderFollowups() {
+  const t = today();
+  const overdue = entries.filter((e) => e.overdue && byAgent(e)).sort((a, b) => a.fu - b.fu);
+  const counts = {};
+  overdue.forEach((e) => { const k = e.agent || "(no agent)"; counts[k] = (counts[k] || 0) + 1; });
+  document.getElementById("fuNote").innerHTML = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="pill bad">${esc(k)} ${n}</span>`).join(" ");
+  const el = document.getElementById("followups");
+  el.innerHTML = overdue.length ? `<thead><tr><th>Due</th><th>Late by</th><th>Agent</th><th>Company</th><th>Outcome</th><th>Stage</th><th class="num">Row</th></tr></thead>
+    <tbody>${overdue.map((f) => `<tr>
+      <td class="overdue">${fmtDate(f.fu)}</td><td>${plural(Math.round((t - f.fu) / DAY), "day")}</td>
+      <td>${esc(f.agent)}</td><td>${esc(f.company)}</td><td>${esc(f.outcome)}</td>
+      <td>${f.stage ? `<span class="pill">${esc(f.stage)}</span>` : ""}</td><td class="num">${f.row || ""}</td>
+    </tr>`).join("")}</tbody>` : `<tr><td class="empty">No overdue follow-ups.</td></tr>`;
+
+  const missing = entries.filter((e) => e.src === "sales" && byAgent(e) && e.interested && !e.fuRaw && !/closed/i.test(e.stage)).sort((a, b) => (b.date || 0) - (a.date || 0));
+  const el2 = document.getElementById("nofollow");
+  el2.innerHTML = missing.length ? `<thead><tr><th>Called</th><th>Agent</th><th>Company</th><th>Stage</th><th class="num">Row</th></tr></thead>
+    <tbody>${missing.map((e) => `<tr><td>${fmtDate(e.date) || esc(e.dateRaw)}</td><td>${esc(e.agent)}</td><td>${esc(e.company)}</td><td>${e.stage ? `<span class="pill">${esc(e.stage)}</span>` : ""}</td><td class="num">${e.row || ""}</td></tr>`).join("")}</tbody>`
+    : `<tr><td class="empty">Every interested lead has a follow-up date.</td></tr>`;
+}
+
+// ---------- data-quality checks ----------
+const CHECKS = [
+  { id: "shell", sev: "bad", title: "Empty row: only a date was filled", why: "No phone, company, outcome or summary. Delete the row or fill in the call.",
+    test: (e) => e.shell, detail: () => "" },
+  { id: "nophone", sev: "bad", title: "Call logged, but no phone number", why: "Has call details but no phone number, so it is not counted as a successful call.",
+    test: (e) => e.date && e.phone === "" && !e.shell },
+  { id: "badphone", sev: "bad", title: "Phone number looks wrong", why: "Fewer than 7 digits. Not counted.",
+    test: (e) => e.phone === "invalid" },
+  { id: "nodate", sev: "bad", title: "No date", why: "Can't be placed on a day. Not counted.",
+    test: (e) => !e.dateRaw },
+  { id: "baddate", sev: "bad", title: "Date can't be read", why: "Use a format like 09-24-2026 or 24-Sep-2026.",
+    test: (e) => e.dateRaw && !e.date, detail: (e) => `Date: "${e.dateRaw}"` },
+  { id: "nosummary", sev: "warn", title: "No call summary", why: "The call counts, but is not complete.",
+    test: (e) => e.successful && blank(e.summary) },
+  { id: "shortsummary", sev: "warn", title: `Call summary shorter than ${MIN_SUMMARY} characters`, why: "Too short to be useful to the next person.",
+    test: (e) => !blank(e.summary) && e.summary.trim().length < MIN_SUMMARY, detail: (e) => `"${e.summary}"` },
+  { id: "noagent", sev: "warn", title: "No agent name", why: "Can't be credited to anyone.",
+    test: (e) => !e.agent },
+  { id: "nooutcome", sev: "warn", title: "No call outcome / response", why: "We don't know what happened on the call.",
+    test: (e) => e.successful && !e.outcome },
+  { id: "nodm", sev: "warn", title: "Decision maker reached? left blank", why: "Fill Yes or No.",
+    test: (e) => e.src === "sales" && e.successful && !isYes(e.dmRaw) && !isNo(e.dmRaw), detail: (e) => e.dmRaw ? `Value: "${e.dmRaw}"` : "" },
+  { id: "nofu", sev: "warn", title: "Interested, but no follow-up date", why: "This lead has no next step.",
+    test: (e) => e.src === "sales" && e.interested && !e.fuRaw && !/closed/i.test(e.stage) },
+  { id: "badfu", sev: "warn", title: "Follow-up date can't be read", why: "Use a format like 09-24-2026 or 24-Sep-2026.",
+    test: (e) => e.fuRaw && !e.fu, detail: (e) => `Follow-up: "${e.fuRaw}"` },
+  { id: "noest", sev: "warn", title: "Interested, but no estimated deal value", why: "Pipeline total is understated.",
+    test: (e) => e.src === "sales" && e.interested && !e.est && !/closed lost/i.test(e.stage) },
+  { id: "wonmismatch", sev: "bad", title: "Won revenue doesn't match the stage", why: "Revenue on a call that isn't Closed Won, or Closed Won with no revenue.",
+    test: (e) => e.src === "sales" && ((e.won > 0 && !/closed won/i.test(e.stage)) || (/closed won/i.test(e.stage) && !e.won)),
+    detail: (e) => `Outcome "${e.outcome || "—"}", stage "${e.stage || "—"}", revenue ${e.wonRaw || "—"}` },
+  { id: "badmoney", sev: "warn", title: "Money value isn't a plain number", why: "Write 9890, not 9.9k or ETB 9,890.",
+    test: (e) => !blank(e.wonRaw) && !/^[\d,.\s]+$/.test(e.wonRaw), detail: (e) => `"${e.wonRaw}"` },
+  { id: "futuredate", sev: "warn", title: "Call date is in the future", why: "Probably a typo in the date.",
+    test: (e) => e.date && e.date > today(), detail: (e) => `Date: ${e.dateRaw}` },
+];
+
+function runChecks() {
+  const list = entries.filter(forChecks);
+  return CHECKS.map((c) => ({ ...c, rows: list.filter(c.test) }));
+}
+
+function renderChecks(checks) {
+  const rank = (c) => (c.rows.length ? 0 : 2) + (c.sev === "bad" ? 0 : 1);
+  const sorted = [...checks].sort((a, b) => rank(a) - rank(b) || b.rows.length - a.rows.length);
+  const open = new Set([...document.querySelectorAll("details.check[open]")].map((d) => d.dataset.id));
+  document.getElementById("checks").innerHTML = sorted.map((c) => {
+    const n = c.rows.length;
+    const rows = [...c.rows].sort((a, b) => (b.date || 0) - (a.date || 0) || (a.row || 0) - (b.row || 0));
+    return `<details class="check${n ? "" : " ok"}" data-id="${c.id}" ${open.has(c.id) && n ? "open" : ""}>
+      <summary>
+        <span><span class="title">${esc(c.title)}</span><br><span class="why">${esc(c.why)}</span></span>
+        <span class="count pill ${n ? c.sev : "good"}">${n ? n : "✓ none"}</span>
+      </summary>
+      ${n ? `<div class="body tablewrap tall"><table>
+        <thead><tr><th>Tab</th><th class="num">Row</th><th>Date</th><th>Agent</th><th>Company / lead</th><th>Detail</th></tr></thead>
+        <tbody>${rows.map((e) => `<tr>
+          <td><span class="dot" style="background:var(${SOURCES[e.src].color})"></span>${SOURCES[e.src].label}</td>
+          <td class="num">${e.row || ""}</td><td>${e.date ? fmtDate(e.date) : esc(e.dateRaw) || "—"}</td>
+          <td>${esc(e.agent) || "—"}</td><td>${esc(e.company) || "—"}</td>
+          <td class="summary">${esc(c.detail ? c.detail(e) : e.outcome)}</td>
+        </tr>`).join("")}</tbody></table></div>` : ""}
+    </details>`;
+  }).join("");
+}
+
+// ---------- charts ----------
 function baseOptions(extra = {}) {
   const text2 = css("--text-2"), grid = css("--grid");
   return {
@@ -445,15 +717,14 @@ function draw(id, config) {
 }
 
 function renderDaily(rows, from, to) {
-  const start = state.range === "all" ? new Date(Math.max(+from, +to - 89*DAY)) : from; // cap at 90 bars
-  const labels = [], keys = [];
-  for (let d = new Date(start); d <= to; d = new Date(+d + DAY)) { keys.push(iso(d)); labels.push(fmtDate(d)); }
+  const days = dayList(from, to);
+  const keys = days.map(iso), labels = days.map(fmtDate);
   const surface = css("--surface");
   const datasets = Object.entries(SOURCES).map(([src, s]) => {
     const counts = Object.fromEntries(keys.map((k) => [k, 0]));
-    rows.filter((r) => r.src === src).forEach((r) => { const k = iso(r.date); if (k in counts) counts[k]++; });
+    rows.filter((r) => r.src === src && r.successful).forEach((r) => { const k = iso(r.date); if (k in counts) counts[k]++; });
     return {
-      label: s.label + "s", data: keys.map((k) => counts[k]), backgroundColor: css(s.color),
+      label: s.label, data: keys.map((k) => counts[k]), backgroundColor: css(s.color),
       borderColor: surface, borderWidth: { top: 2 }, borderSkipped: "bottom",
       borderRadius: src === "lead" ? { topLeft: 4, topRight: 4 } : 0, maxBarThickness: 36,
     };
@@ -465,7 +736,7 @@ function renderDaily(rows, from, to) {
 
 function countBy(list, fn, top = 8) {
   const m = new Map();
-  list.forEach((r) => { const k = (fn(r) || "").trim(); if (k) { const key = k.charAt(0).toUpperCase() + k.slice(1).toLowerCase(); m.set(key, (m.get(key) || 0) + 1); } });
+  list.forEach((r) => { const k = fn(r); if (k) m.set(k, (m.get(k) || 0) + 1); });
   const sorted = [...m.entries()].sort((a, b) => b[1] - a[1]);
   if (sorted.length > top) {
     const other = sorted.slice(top - 1).reduce((s, [, v]) => s + v, 0);
@@ -474,74 +745,33 @@ function countBy(list, fn, top = 8) {
   return sorted;
 }
 
-function hbar(id, entries, colorVar) {
+function renderOutcomes(rows) {
+  const counts = countBy(rows.filter((r) => r.src === "sales" && r.successful), (r) => r.outcome || "(blank)");
   const opts = baseOptions({ indexAxis: "y" });
   opts.plugins.tooltip = { mode: "nearest", intersect: false, axis: "y" };
   opts.scales = {
     x: { beginAtZero: true, grid: { color: css("--grid") }, ticks: { color: css("--text-2"), precision: 0 }, border: { display: false } },
     y: { grid: { display: false }, ticks: { color: css("--text-2") }, border: { color: css("--grid") } },
   };
-  draw(id, {
+  draw("outcomes", {
     type: "bar",
-    data: { labels: entries.map((e) => e[0]), datasets: [{ label: "Count", data: entries.map((e) => e[1]), backgroundColor: css(colorVar), borderRadius: { topRight: 4, bottomRight: 4 }, borderSkipped: "left", maxBarThickness: 22 }] },
+    data: { labels: counts.map((e) => e[0]), datasets: [{ label: "Calls", data: counts.map((e) => e[1]), backgroundColor: css("--s1"), borderRadius: { topRight: 4, bottomRight: 4 }, borderSkipped: "left", maxBarThickness: 22 }] },
     options: opts,
   });
 }
 
-function renderOutcomes(rows) {
-  hbar("outcomes", countBy(rows.filter((r) => r.src === "sales"), (r) => r.outcome), "--s1");
-}
-
-function renderReact(rows) {
-  hbar("react", countBy(rows.filter((r) => r.src === "react"), (r) => r.response || r.status), "--s2");
-}
-
-function renderAgents(rows) {
-  const m = new Map();
-  rows.forEach((r) => {
-    const k = r.agent || "(blank)";
-    const a = m.get(k) || { agent: k, sales: 0, react: 0, lead: 0, dm: 0, interested: 0, won: 0 };
-    a[r.src]++; if (r.dm) a.dm++; if (r.interested) a.interested++; a.won += r.won;
-    m.set(k, a);
-  });
-  const list = [...m.values()].map((a) => ({ ...a, total: a.sales + a.react + a.lead })).sort((a, b) => b.total - a.total);
-  const max = Math.max(1, ...list.map((a) => a.total));
-  const el = document.getElementById("agents");
-  if (!list.length) { el.innerHTML = `<tr><td class="empty">No activity in this period.</td></tr>`; return; }
-  el.innerHTML = `<thead><tr><th>Agent</th><th class="num">Total</th><th class="num">Sales calls</th><th class="num">Reactivation</th><th class="num">Lead-gen</th><th class="num">DM reached</th><th class="num">Interested</th><th class="num">Won revenue</th></tr></thead>
-    <tbody>${list.map((a) => `<tr>
-      <td>${esc(a.agent)}</td>
-      <td class="num"><div class="inbar"><span class="b" style="width:${Math.round(80 * a.total / max)}px"></span><strong>${a.total}</strong></div></td>
-      <td class="num">${a.sales}</td><td class="num">${a.react}</td><td class="num">${a.lead}</td>
-      <td class="num">${a.dm}</td><td class="num">${a.interested}</td><td class="num">${money(a.won)}</td>
-    </tr>`).join("")}</tbody>`;
-}
-
-function renderFollowups() {
-  const t = today();
-  const horizon = new Date(+t + 7*DAY);
-  const list = followups
-    .filter((f) => f.due <= horizon && (!state.agent || f.agent === state.agent))
-    .sort((a, b) => a.due - b.due).slice(0, 40);
-  const el = document.getElementById("followups");
-  if (!list.length) { el.innerHTML = `<tr><td class="empty">Nothing due in the next 7 days.</td></tr>`; return; }
-  el.innerHTML = `<thead><tr><th>Due</th><th>Agent</th><th>Company</th><th>Outcome</th><th>Stage</th></tr></thead>
-    <tbody>${list.map((f) => `<tr>
-      <td class="${f.due < t ? "overdue" : ""}">${f.due < t ? "Overdue · " : +f.due === +t ? "Today · " : ""}${fmtDate(f.due)}</td>
-      <td>${esc(f.agent)}</td><td>${esc(f.company)}</td><td>${esc(f.outcome)}</td><td>${f.stage ? `<span class="pill">${esc(f.stage)}</span>` : ""}</td>
-    </tr>`).join("")}</tbody>`;
-}
-
 function renderRecent(rows) {
-  const list = [...rows].sort((a, b) => b.date - a.date).slice(0, 60);
+  const list = rows.filter((r) => !r.shell).sort((a, b) => b.date - a.date || (b.row || 0) - (a.row || 0)).slice(0, 200);
   const el = document.getElementById("recent");
   if (!list.length) { el.innerHTML = `<tr><td class="empty">No entries in this period.</td></tr>`; return; }
   const trunc = (s, n = 140) => (s.length > n ? s.slice(0, n) + "…" : s);
-  el.innerHTML = `<thead><tr><th>Date</th><th>Tab</th><th>Agent</th><th>Company / lead</th><th>Outcome</th><th>Summary</th></tr></thead>
+  const status = (r) => !r.successful ? `<span class="pill bad">Not counted</span>` : r.complete ? `<span class="pill good">Complete</span>` : `<span class="pill warn">No summary</span>`;
+  el.innerHTML = `<thead><tr><th>Date</th><th>Tab</th><th class="num">Row</th><th>Agent</th><th>Company / lead</th><th>Status</th><th>Outcome</th><th>Summary</th></tr></thead>
     <tbody>${list.map((r) => `<tr>
       <td>${fmtDate(r.date)}</td>
       <td><span class="dot" style="background:var(${SOURCES[r.src].color})"></span>${SOURCES[r.src].label}</td>
-      <td>${esc(r.agent)}</td><td>${esc(r.company)}</td><td>${esc(r.outcome)}</td>
+      <td class="num">${r.row || ""}</td>
+      <td>${esc(r.agent)}</td><td>${esc(r.company)}</td><td>${status(r)}</td><td>${esc(r.outcome)}</td>
       <td class="summary">${esc(trunc(r.summary || ""))}</td>
     </tr>`).join("")}</tbody>`;
 }
@@ -557,8 +787,8 @@ async function start() {
       const key = prompt("Dashboard password:");
       if (key) { sessionStorageSet("dashKey", key); return start(); }
     }
-    const b = document.getElementById("banner");
-    b.style.display = "block";
+    const b = document.getElementById("loaderr");
+    b.hidden = false;
     b.textContent = "Could not load the sheet: " + e.message + (SOURCE === "api" ? " Make sure it is shared as 'Anyone with the link can view'." : "");
     document.getElementById("updated").textContent = "Load failed";
   }
@@ -568,6 +798,10 @@ document.getElementById("ranges").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   state.range = b.dataset.range; render();
 });
+document.getElementById("matrixSrc").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  state.matrixSrc = b.dataset.src; render();
+});
 ["from", "to"].forEach((id) => document.getElementById(id).addEventListener("change", () => {
   state.range = "custom";
   state.from = parseDate(document.getElementById("from").value);
@@ -576,7 +810,7 @@ document.getElementById("ranges").addEventListener("click", (e) => {
 }));
 document.getElementById("agent").addEventListener("change", (e) => { state.agent = e.target.value; render(); });
 document.getElementById("refresh").addEventListener("click", start);
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => raw && render());
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => entries.length && render());
 setInterval(() => document.visibilityState === "visible" && start(), 5 * 60 * 1000);
 
 start();

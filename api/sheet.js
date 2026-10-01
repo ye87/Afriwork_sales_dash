@@ -1,9 +1,18 @@
 // Fetches one tab of the public Google Sheet as CSV and returns it as JSON rows.
-// Phone / email columns are stripped so the public dashboard never exposes contact details.
+// Contact details never leave the server: email columns are dropped, and phone columns are
+// replaced by "valid" / "invalid" / "" so the dashboard can check a number was entered.
 
 const SHEET_ID = process.env.SHEET_ID || "1yGSvua5cQm0Czz4_Mr-dW9WmjgDP1PWVcP14n7pX8z0";
 const ALLOWED_TABS = ["Sales_call_log", "Reactivation", "LEAD-GEN"];
-const PRIVATE_COLUMN = /phone|e-?mail/i;
+const EMAIL_COLUMN = /e-?mail/i;
+const PHONE_COLUMN = /phone/i;
+
+// "2.51912E+11" is how Sheets exports a long number; anything with 7+ digits is a plausible phone.
+function phoneQuality(v) {
+  v = String(v || "").trim();
+  if (!v) return "";
+  return /e\+/i.test(v) || v.replace(/\D/g, "").length >= 7 ? "valid" : "invalid";
+}
 
 function parseCsv(text) {
   const rows = [];
@@ -40,11 +49,18 @@ module.exports = async (req, res) => {
     if (!r.ok) throw new Error(`Google returned ${r.status}`);
     const [header = [], ...body] = parseCsv(await r.text());
     const keep = header
-      .map((name, i) => ({ name: name.trim(), i }))
-      .filter((c) => c.name && !PRIVATE_COLUMN.test(c.name));
-    const rows = body
-      .filter((cells) => cells.some((v) => v.trim() !== ""))
-      .map((cells) => Object.fromEntries(keep.map((c) => [c.name, (cells[c.i] || "").trim()])));
+      .map((name, i) => ({ name: name.trim(), i, phone: PHONE_COLUMN.test(name) }))
+      .filter((c) => c.name && !EMAIL_COLUMN.test(c.name));
+    const rows = [];
+    body.forEach((cells, idx) => {
+      if (!cells.some((v) => v.trim() !== "")) return;
+      const row = { __row: idx + 2 }; // sheet row number (header is row 1)
+      for (const c of keep) {
+        const v = (cells[c.i] || "").trim();
+        row[c.name] = c.phone ? phoneQuality(v) : v;
+      }
+      rows.push(row);
+    });
 
     // Cache at Vercel's edge for 60s so many viewers don't hammer Google.
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
