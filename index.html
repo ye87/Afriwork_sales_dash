@@ -196,7 +196,7 @@ function col(row, ...names) {
 
 // Handles 09-24-2026, 26-Sep-2026, 9/24/2026, 2026-09-24, "4/8/2026 10:32:05", Sep-27.
 function parseDate(s) {
-  s = String(s || "").trim().split(/\s+/)[0];
+  s = String(s || "").trim().replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*([ap]m)?$/i, "");
   if (!s) return null;
   let m;
   if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/))) return mk(+m[1], +m[2]-1, +m[3]);
@@ -208,7 +208,7 @@ function parseDate(s) {
     let y = m[3] ? +m[3] : new Date().getFullYear(); if (y < 100) y += 2000;
     return mk(y, MONTHS[m[2].toLowerCase()], +m[1]);
   }
-  if ((m = s.match(/^([a-z]{3})[a-z]*[-/ ](\d{1,2})(?:[-/ ,]+(\d{2,4}))?$/i)) && m[1].toLowerCase() in MONTHS) {
+  if ((m = s.match(/^([a-z]{3})[a-z]*[-/ ]?(\d{1,2})(?:[-/ ,]+(\d{2,4}))?$/i)) && m[1].toLowerCase() in MONTHS) {
     let y = m[3] ? +m[3] : new Date().getFullYear(); if (y < 100) y += 2000;
     return mk(y, MONTHS[m[1].toLowerCase()], +m[2]);
   }
@@ -268,7 +268,7 @@ function normalize() {
 
   for (const r of raw.Reactivation || []) {
     const date = parseDate(col(r, "Date called"));
-    if (!date) continue; // most rows are the uncalled backlog
+    if (!date) { if (col(r, "Status") || col(r, "Sales Agent Name")) skipped.react++; continue; } // blank rows are the uncalled backlog
     const interest = col(r, "Interest level");
     activities.push({
       src: "react", date, agent: cleanAgent(col(r, "Sales Agent Name")), company: col(r, "name"),
@@ -296,6 +296,7 @@ function normalize() {
   const banner = document.getElementById("banner");
   const msgs = [];
   if (skipped.sales) msgs.push(`${skipped.sales} Sales_call_log row(s) have no readable Date`);
+  if (skipped.react) msgs.push(`${skipped.react} Reactivation row(s) have a Status/Agent but no Date called`);
   if (skipped.lead) msgs.push(`${skipped.lead} LEAD-GEN row(s) have no readable Contact date`);
   banner.style.display = msgs.length ? "block" : "none";
   banner.textContent = msgs.length ? msgs.join(" · ") + " — they are not counted. Ask agents to always fill the date." : "";
