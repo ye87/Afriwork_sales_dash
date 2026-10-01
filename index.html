@@ -89,7 +89,7 @@
   .inbar span.b { height: 8px; border-radius: 0 4px 4px 0; background: var(--bar); }
   .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--text-2); }
   .overdue { color: var(--bad); font-weight: 600; }
-  .banner { background: var(--warn-bg); color: var(--warn); padding: 10px 12px; border-radius: 8px; margin-top: 10px; display: none; }
+  .banner { background: var(--warn-bg); color: var(--warn); padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; display: none; }
   .empty { color: var(--muted); padding: 12px 0; }
 </style>
 </head>
@@ -226,8 +226,12 @@ const isYes = (s) => /^y(es)?$/i.test(String(s).trim());
 const isInterested = (s) => /interest/i.test(s) && !/not\s*interest/i.test(s);
 
 // ---------- data ----------
-async function load() {
-  document.getElementById("updated").textContent = "Loading…";
+// "api" = Vercel function (/api/sheet). "drive" = claude.ai Artifact reading the sheet via the viewer's Google Drive connector.
+const SOURCE = "api";
+const SHEET_ID = "1yGSvua5cQm0Czz4_Mr-dW9WmjgDP1PWVcP14n7pX8z0";
+const PRIVATE_COLUMN = /phone|e-?mail/i;
+
+async function fetchFromApi() {
   const key = sessionStorageGet("dashKey");
   const results = await Promise.all(TABS.map(async (tab) => {
     const r = await fetch(`/api/sheet?tab=${encodeURIComponent(tab)}`, { headers: key ? { "x-dashboard-key": key } : {} });
@@ -235,7 +239,54 @@ async function load() {
     if (!r.ok) throw new Error(`${tab}: ${(await r.json().catch(() => ({}))).error || r.status}`);
     return r.json();
   }));
-  raw = Object.fromEntries(results.map((r) => [r.tab, r.rows]));
+  return Object.fromEntries(results.map((r) => [r.tab, r.rows]));
+}
+
+const DRIVE_ERRORS = {
+  server_not_connected: "Connect Google Drive in claude.ai Settings → Connectors, then press Refresh.",
+  needs_reauth: "Your Google Drive connection expired. Reconnect it in claude.ai Settings → Connectors, then press Refresh.",
+  selection_required: "You have more than one Google Drive connector. Pick one when Claude asks, then press Refresh.",
+  not_in_manifest: "Google Drive access was declined for this page. Reload the page and allow it to see the data.",
+  blocked_by_policy: "Your organization blocks Google Drive for this page.",
+  tool_error: "Google Drive could not export the sheet. Check that your Google account can open the Afriwork Master CRM sheet.",
+};
+
+async function fetchFromDrive() {
+  const mcp = window.claude?.use ? await window.claude.use("mcp") : null;
+  if (!mcp) throw new Error("Open this dashboard on claude.ai to load the sheet through Google Drive.");
+  let res;
+  try {
+    res = await mcp.callTool("Google Drive", "download_file_content",
+      { fileId: SHEET_ID, exportMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      { cache: { staleTime: 60000 } });
+  } catch (e) {
+    if (e?.retryable) {
+      await new Promise((r) => setTimeout(r, e.retryAfterMs || 1500 + Math.random() * 1500));
+      res = await mcp.callTool("Google Drive", "download_file_content",
+        { fileId: SHEET_ID, exportMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    } else {
+      throw new Error(DRIVE_ERRORS[e?.code] || e?.message || "Google Drive request failed.");
+    }
+  }
+  let p = res.payload;
+  if (typeof p === "string") { try { p = JSON.parse(p); } catch {} }
+  const b64 = typeof p === "string" ? p : p?.content;
+  if (!b64) throw new Error("Google Drive returned no file content.");
+  const wb = XLSX.read(b64, { type: "base64", sheets: TABS });
+  const out = {};
+  for (const tab of TABS) {
+    const ws = wb.Sheets[tab];
+    const rows = ws ? XLSX.utils.sheet_to_json(ws, { raw: false, defval: "" }) : [];
+    out[tab] = rows.map((r) => Object.fromEntries(Object.entries(r)
+      .filter(([k]) => !PRIVATE_COLUMN.test(k) && !/^__EMPTY/.test(k))
+      .map(([k, v]) => [k.trim(), String(v).trim()])));
+  }
+  return out;
+}
+
+async function load() {
+  document.getElementById("updated").textContent = "Loading…";
+  raw = SOURCE === "drive" ? await fetchFromDrive() : await fetchFromApi();
   normalize();
   fillAgents();
   render();
@@ -502,13 +553,13 @@ function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch {
 async function start() {
   try { await load(); }
   catch (e) {
-    if (e.auth) {
+    if (e.auth && SOURCE === "api") {
       const key = prompt("Dashboard password:");
       if (key) { sessionStorageSet("dashKey", key); return start(); }
     }
     const b = document.getElementById("banner");
     b.style.display = "block";
-    b.textContent = "Could not load the sheet: " + e.message + ". Make sure it is shared as 'Anyone with the link can view'.";
+    b.textContent = "Could not load the sheet: " + e.message + (SOURCE === "api" ? " Make sure it is shared as 'Anyone with the link can view'." : "");
     document.getElementById("updated").textContent = "Load failed";
   }
 }
