@@ -19,6 +19,7 @@
     --s1: #2a78d6; /* sales calls */
     --s2: #eb6834; /* reactivation */
     --s3: #1baf7a; /* lead-gen */
+    --s4: #4a3aa7; /* follow-ups */
     --bar: #2a78d6;
     --good: #0f7a3a; --good-bg: #e3f4e8;
     --warn: #8a5a00; --warn-bg: #fff1d1;
@@ -29,7 +30,7 @@
       color-scheme: dark;
       --bg: #111110; --surface: #1a1a19; --border: #2e2e2b;
       --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --grid: #2a2a27;
-      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --bar: #3987e5;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9085e9; --bar: #3987e5;
       --good: #5fd08a; --good-bg: #12301d;
       --warn: #f2c25c; --warn-bg: #3a2c0a;
       --bad: #ff8a85;  --bad-bg: #3d1716;
@@ -39,7 +40,7 @@
     color-scheme: dark;
     --bg: #111110; --surface: #1a1a19; --border: #2e2e2b;
     --text: #ffffff; --text-2: #c3c2b7; --muted: #8f8e86; --grid: #2a2a27;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --bar: #3987e5;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9085e9; --bar: #3987e5;
     --good: #5fd08a; --good-bg: #12301d;
     --warn: #f2c25c; --warn-bg: #3a2c0a;
     --bad: #ff8a85;  --bad-bg: #3d1716;
@@ -163,10 +164,11 @@
 
   <div class="card">
     <div class="card-head">
-      <h2>Successful calls per agent per day</h2>
-      <div class="seg" id="matrixSrc" role="group" aria-label="Which tabs to count">
-        <button data-src="all" aria-pressed="true">All tabs</button>
-        <button data-src="sales">Sales_call_log</button>
+      <h2>Calls per agent per day</h2>
+      <div class="seg" id="matrixSrc" role="group" aria-label="Which calls to count">
+        <button data-src="all" aria-pressed="true">All calls</button>
+        <button data-src="sales">Sales</button>
+        <button data-src="followup">Follow-ups</button>
         <button data-src="react">Reactivation</button>
         <button data-src="lead">LEAD-GEN</button>
       </div>
@@ -174,23 +176,24 @@
     <div class="legend">
       <span><span class="pill good">20+</span> target met</span>
       <span><span class="pill warn">1–19</span> under target</span>
-      <span><span style="color:var(--bad)">+3 not counted</span> = rows with a date but no valid phone number (includes empty rows)</span>
+      <span><span style="color:var(--bad)">+3 not counted</span> = rows with a date that don't meet the rules (see warnings)</span>
+      <span>Hover a cell for the split by call type</span>
     </div>
     <div class="tablewrap"><table class="matrix" id="matrix"></table></div>
   </div>
 
   <div class="card">
-    <div class="card-head"><h2>Agent summary</h2><span class="sub">Successful call = has a date and a phone number. Complete = successful + call summary.</span></div>
+    <div class="card-head"><h2>Agent summary</h2><span class="sub">Sales call = date + phone. Follow-up = Follow-up Status is Done or No answer. Reactivation = date called + status.</span></div>
     <div class="tablewrap"><table id="agents"></table></div>
   </div>
 
   <div class="grid2">
     <div class="card">
-      <div class="card-head"><h2>Overdue follow-ups</h2><span class="sub" id="fuNote"></span></div>
+      <div class="card-head"><h2>Overdue follow-ups</h2><span class="sub">All dates. Follow-up date passed, status not Done / No answer</span><span class="sub" id="fuNote"></span></div>
       <div class="tablewrap tall"><table id="followups"></table></div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Interested, but no follow-up date</h2></div>
+      <div class="card-head"><h2>Interested, but no follow-up date</h2><span class="sub">All dates</span></div>
       <div class="tablewrap tall"><table id="nofollow"></table></div>
     </div>
   </div>
@@ -202,9 +205,10 @@
 
   <div class="grid2">
     <div class="card">
-      <h2>Successful calls per day</h2>
+      <h2>Calls per day</h2>
       <div class="legend" style="margin-top:8px">
-        <span><span class="dot" style="background:var(--s1)"></span>Sales_call_log</span>
+        <span><span class="dot" style="background:var(--s1)"></span>Sales calls</span>
+        <span><span class="dot" style="background:var(--s4)"></span>Follow-ups</span>
         <span><span class="dot" style="background:var(--s2)"></span>Reactivation</span>
         <span><span class="dot" style="background:var(--s3)"></span>LEAD-GEN</span>
       </div>
@@ -224,12 +228,17 @@
 
 <script>
 // ---------- settings you may want to change ----------
-const DAILY_TARGET = 20;      // successful calls per agent per day
+const DAILY_TARGET = 20;      // calls per agent per day (sales + follow-ups + reactivation + lead-gen)
 const MIN_SUMMARY = 15;       // shorter call summaries are flagged as too short
 // Map spelling variants of agent names to one name, lowercase keys. Example: { "kal": "Kalkidan" }
 const AGENT_ALIASES = {};
 // Fix common typos in outcome / response values, lowercase keys.
 const VALUE_FIXES = { "already regsitered": "already registered", "not intersted": "not interested", "client lost / not intersted": "client lost / not interested" };
+
+// Follow-up Status (column T) values that mean the follow-up call was made. Anything else (Pending, blank) is not a call.
+const FOLLOWUP_CALLED = ["done", "no answer"];
+// Optional column with the day the follow-up was actually made. Until it exists, follow-ups are counted on the planned date (column R).
+const FOLLOWUP_DONE_ON = ["Follow-up done on", "Followup done on", "Follow-up done date", "Followed up on"];
 
 // "api" = Vercel function (/api/sheet). "drive" = claude.ai Artifact reading the sheet via the viewer's Google Drive connector.
 const SOURCE = "api";
@@ -241,10 +250,18 @@ const SOURCES = {
   react: { label: "Reactivation", color: "--s2" },
   lead:  { label: "LEAD-GEN", color: "--s3" },
 };
+// The four kinds of call that count toward the daily target, in stacking order.
+const KINDS = {
+  sales:    { label: "Sales calls", color: "--s1" },
+  followup: { label: "Follow-ups", color: "--s4" },
+  react:    { label: "Reactivation", color: "--s2" },
+  lead:     { label: "LEAD-GEN", color: "--s3" },
+};
 const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
 const DAY = 86400000;
 
 let entries = [];          // every touched row from all tabs, normalized
+let calls = [];            // countable calls: { kind, date, agent, e } — one sheet row can produce a sales call and a follow-up
 let charts = {};
 let state = { range: "7d", from: null, to: null, agent: "", matrixSrc: "all" };
 
@@ -271,7 +288,8 @@ function col(row, ...names) {
 }
 
 // Handles 09-24-2026, 26-Sep-2026, 9/24/2026, 2026-09-24, "4/8/2026 10:32:05", Sep-27, Sep 27, September 9.
-function parseDate(s) {
+// When the year is missing, picks the year that puts the date closest to `ref` (so "Jan 3" typed in December means next year).
+function parseDate(s, ref) {
   s = String(s || "").trim().replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*([ap]m)?$/i, "");
   if (!s) return null;
   let m;
@@ -281,15 +299,18 @@ function parseDate(s) {
     return a > 12 ? mk(y, b-1, a) : mk(y, a-1, b); // default month-first (sheet uses MM-DD-YYYY)
   }
   if ((m = s.match(/^(\d{1,2})[-/ ]([a-z]{3})[a-z]*[-/ ,]*(\d{2,4})?$/i)) && m[2].toLowerCase() in MONTHS) {
-    let y = m[3] ? +m[3] : new Date().getFullYear(); if (y < 100) y += 2000;
-    return mk(y, MONTHS[m[2].toLowerCase()], +m[1]);
+    return m[3] ? mk(+m[3] < 100 ? +m[3] + 2000 : +m[3], MONTHS[m[2].toLowerCase()], +m[1]) : noYear(MONTHS[m[2].toLowerCase()], +m[1]);
   }
   if ((m = s.match(/^([a-z]{3})[a-z]*[-/ ]?(\d{1,2})(?:[-/ ,]+(\d{2,4}))?$/i)) && m[1].toLowerCase() in MONTHS) {
-    let y = m[3] ? +m[3] : new Date().getFullYear(); if (y < 100) y += 2000;
-    return mk(y, MONTHS[m[1].toLowerCase()], +m[2]);
+    return m[3] ? mk(+m[3] < 100 ? +m[3] + 2000 : +m[3], MONTHS[m[1].toLowerCase()], +m[2]) : noYear(MONTHS[m[1].toLowerCase()], +m[2]);
   }
   return null;
   function mk(y, mo, d) { const dt = new Date(y, mo, d); return isNaN(dt) || dt.getDate() !== d ? null : dt; }
+  function noYear(mo, d) {
+    const r = ref || today();
+    const options = [-1, 0, 1].map((k) => mk(r.getFullYear() + k, mo, d)).filter(Boolean);
+    return options.sort((a, b) => Math.abs(a - r) - Math.abs(b - r))[0] || null;
+  }
 }
 
 function cleanAgent(s) {
@@ -399,6 +420,7 @@ function normalize(raw) {
       summary: col(r, "Call Summary (Mandatory)", "Call Summary"),
       est: num(col(r, "Estimated deal value")), wonRaw: col(r, "Won revenue"),
       fuRaw: col(r, "Next Follow-up Date"), fuStatus: col(r, "Follow-up Status"),
+      fuDoneRaw: col(r, ...FOLLOWUP_DONE_ON),
     };
     if (!e.dateRaw && !e.company && !e.outcome && !e.summary && !e.agent && !e.phone) continue;
     e.interested = isInterested(e.outcome);
@@ -441,13 +463,26 @@ function normalize(raw) {
     e.won = num(e.wonRaw);
     e.est = e.est || 0;
     e.dm = isYes(e.dmRaw);
-    e.successful = !!e.date && e.phone === "valid";
+    // Sales / lead-gen: date + phone number. Reactivation: date + status (every lead already has a phone).
+    e.successful = e.src === "react" ? !!e.date && !!e.status : !!e.date && e.phone === "valid";
     e.complete = e.successful && !blank(e.summary);
     // A date (maybe an agent) but nothing about the call itself: usually a row pre-filled ahead of time.
-    e.shell = !!e.dateRaw && e.phone === "" && !e.company && !e.outcome && blank(e.summary);
-    e.fu = e.fuRaw ? parseDate(e.fuRaw) : null;
-    e.fuDone = /done|closed|complete/i.test(e.fuStatus || "");
-    e.overdue = !!e.fu && !e.fuDone && e.fu < t;
+    e.shell = e.src !== "react" && !!e.dateRaw && e.phone === "" && !e.company && !e.outcome && blank(e.summary);
+
+    // Follow-up (Sales_call_log only): planned on R, counted when T says it happened.
+    e.fu = e.fuRaw ? parseDate(e.fuRaw, e.date) : null;
+    e.fuCalled = e.src === "sales" && FOLLOWUP_CALLED.includes(String(e.fuStatus || "").trim().toLowerCase());
+    e.fuDoneOn = e.fuDoneRaw ? parseDate(e.fuDoneRaw, e.fu || e.date) : null;
+    // Day the follow-up call is credited to: the real day if recorded, else the planned day (never in the future).
+    e.fuCallDate = e.fuCalled ? (e.fuDoneOn || (e.fu && (e.fu > t ? t : e.fu))) : null;
+    e.fuLateDays = e.fuDoneOn && e.fu ? Math.round((e.fuDoneOn - e.fu) / DAY) : null;
+    e.overdue = e.src === "sales" && !!e.fu && !e.fuCalled && e.fu < t && !/closed/i.test(e.stage);
+  }
+
+  calls = [];
+  for (const e of entries) {
+    if (e.successful) calls.push({ kind: e.src, date: e.date, agent: e.agent, e });
+    if (e.fuCallDate) calls.push({ kind: "followup", date: e.fuCallDate, agent: e.agent, e, planned: !e.fuDoneOn });
   }
 }
 
@@ -480,6 +515,8 @@ function inRange(e) { const [from, to] = rangeBounds(); return e.date && e.date 
 const forChecks = (e) => byAgent(e) && (!e.date || inRange(e));
 
 // ---------- render ----------
+const callInRange = (c) => { const [from, to] = rangeBounds(); return byAgent(c) && c.date >= from && c.date <= to; };
+
 function render() {
   const [from, to] = rangeBounds();
   document.getElementById("from").value = iso(from);
@@ -488,13 +525,14 @@ function render() {
   document.querySelectorAll("#matrixSrc button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.src === state.matrixSrc)));
 
   const rows = entries.filter((e) => byAgent(e) && inRange(e));
+  const cs = calls.filter(callInRange);
   const checks = runChecks();
-  renderKpis(rows, from, to, checks);
-  renderMatrix(rows, from, to);
-  renderAgents(rows);
+  renderKpis(rows, cs, from, to, checks);
+  renderMatrix(rows, cs, from, to);
+  renderAgents(rows, cs);
   renderFollowups();
   renderChecks(checks);
-  renderDaily(rows, from, to);
+  renderDaily(cs, from, to);
   renderOutcomes(rows);
   renderRecent(rows);
 }
@@ -506,89 +544,105 @@ function dayList(from, to) {
   return out;
 }
 
-function renderKpis(rows, from, to, checks) {
-  const ok = rows.filter((r) => r.successful);
+const NA = "(no agent)";
+const breakdown = (list) => Object.keys(KINDS).map((k) => [k, list.filter((c) => c.kind === k).length]).filter(([, n]) => n);
+
+function agentDayTotals(cs) {
+  const m = new Map();
+  cs.forEach((c) => { const k = (c.agent || NA) + "|" + iso(c.date); m.set(k, (m.get(k) || 0) + 1); });
+  return m;
+}
+
+function renderKpis(rows, cs, from, to, checks) {
   const days = Math.max(1, Math.round((to - from) / DAY) + 1);
-  const notCounted = rows.filter((r) => !r.successful).length;
+  const notCounted = rows.filter((r) => !r.successful);
+  const shells = notCounted.filter((r) => r.shell).length;
+  const ok = rows.filter((r) => r.successful);
   const completePct = ok.length ? Math.round(100 * ok.filter((r) => r.complete).length / ok.length) : 0;
-  const agentDays = new Map();
-  ok.forEach((r) => { const k = r.agent + "|" + iso(r.date); agentDays.set(k, (agentDays.get(k) || 0) + 1); });
+  const agentDays = agentDayTotals(cs);
   const met = [...agentDays.values()].filter((n) => n >= DAILY_TARGET).length;
+  const fus = cs.filter((c) => c.kind === "followup");
+  const late = fus.filter((c) => c.e.fuLateDays > 0).length;
+  const planned = fus.filter((c) => c.planned).length;
   const overdue = entries.filter((e) => e.overdue && byAgent(e)).length;
   const issues = checks.reduce((s, c) => s + c.rows.length, 0);
   const sales = ok.filter((r) => r.src === "sales");
   const dmPct = sales.length ? Math.round(100 * sales.filter((r) => r.dm).length / sales.length) : 0;
+  const n = (k) => cs.filter((c) => c.kind === k).length.toLocaleString();
   const tiles = [
-    ["Successful calls", ok.length.toLocaleString(), days > 1 ? `${(ok.length / days).toFixed(1)} per day` : "date + phone number filled"],
-    ["Rows not counted", notCounted.toLocaleString(), `${rows.filter((r) => r.shell).length} empty, ${notCounted - rows.filter((r) => r.shell).length} missing phone`, notCounted > 0],
-    ["Complete", completePct + "%", "of successful calls have a summary"],
+    ["Total calls", cs.length.toLocaleString(), days > 1 ? `${(cs.length / days).toFixed(1)} per day` : "all call types"],
+    ["Sales calls", n("sales"), "date + phone number", false, "--s1"],
+    ["Follow-up calls", n("followup"), planned ? `${planned} dated by plan, not actual day` : late ? `${late} done late` : "status Done / No answer", false, "--s4"],
+    ["Reactivation calls", n("react"), "date called + status", false, "--s2"],
     ["Days at target", `${met} of ${agentDays.size}`, `agent-days with ${DAILY_TARGET}+ calls`],
-    ["Decision maker reached", dmPct + "%", "of successful sales calls"],
-    ["Interested", rows.filter((r) => r.interested).length.toLocaleString(), "sales + reactivation (high/med)"],
+    ["Rows not counted", notCounted.length.toLocaleString(), shells ? `${shells} empty, ${notCounted.length - shells} missing info` : "missing phone, date or status", notCounted.length > 0],
+    ["Overdue follow-ups", overdue.toLocaleString(), "date passed, not done", overdue > 0],
+    ["Complete", completePct + "%", "of counted rows have a summary"],
+    ["Decision maker reached", dmPct + "%", "of counted sales calls"],
     ["Won revenue", money(rows.reduce((s, r) => s + r.won, 0)), "in this period"],
-    ["Overdue follow-ups", overdue.toLocaleString(), "all dates", overdue > 0],
     ["Data warnings", issues.toLocaleString(), "see the list below", issues > 0],
   ];
-  document.getElementById("kpis").innerHTML = tiles.map(([l, v, n, alert]) => `
+  document.getElementById("kpis").innerHTML = tiles.map(([l, v, note, alert, color]) => `
     <div class="card kpi${alert ? " alert" : ""}">
-      <div class="label">${l}</div>
+      <div class="label">${color ? `<span class="dot" style="background:var(${color})"></span>` : ""}${l}</div>
       <div class="value">${v}</div>
-      <div class="note">${n || "&nbsp;"}</div>
+      <div class="note">${note || "&nbsp;"}</div>
     </div>`).join("");
 }
 
-function renderMatrix(rows, from, to) {
-  const srcOk = (r) => state.matrixSrc === "all" || r.src === state.matrixSrc;
-  const list = rows.filter(srcOk);
+function renderMatrix(rows, cs, from, to) {
+  const kind = state.matrixSrc;
+  const list = cs.filter((c) => kind === "all" || c.kind === kind);
+  // "not counted" rows belong to a tab; follow-ups have no not-counted rows of their own.
+  const bad = rows.filter((r) => !r.successful && (kind === "all" || r.src === kind));
   const days = dayList(from, to);
   const keys = days.map(iso);
-  const NA = "(no agent)";
-  const agents = [...new Set(list.map((r) => r.agent || NA))].sort((a, b) => a === NA ? 1 : b === NA ? -1 : a.localeCompare(b));
+  const agents = [...new Set([...list, ...bad].map((r) => r.agent || NA))].sort((a, b) => a === NA ? 1 : b === NA ? -1 : a.localeCompare(b));
   const el = document.getElementById("matrix");
   if (!agents.length) { el.innerHTML = `<tr><td class="empty">No calls logged in this period.</td></tr>`; return; }
-  const cell = {}; // agent|day → {ok, bad}
-  list.forEach((r) => {
-    const k = (r.agent || NA) + "|" + iso(r.date);
-    const c = cell[k] || (cell[k] = { ok: 0, bad: 0 });
-    r.successful ? c.ok++ : c.bad++;
-  });
-  const activeDay = Object.fromEntries(keys.map((d) => [d, agents.some((a) => cell[a + "|" + d]?.ok)]));
+  const cell = {}; // agent|day → { n, bad, by: {kind: n} }
+  const get = (k) => cell[k] || (cell[k] = { n: 0, bad: 0, by: {} });
+  list.forEach((c) => { const x = get((c.agent || NA) + "|" + iso(c.date)); x.n++; x.by[c.kind] = (x.by[c.kind] || 0) + 1; });
+  bad.forEach((r) => { get((r.agent || NA) + "|" + iso(r.date)).bad++; });
+  const activeDay = Object.fromEntries(keys.map((d) => [d, agents.some((a) => cell[a + "|" + d]?.n)]));
   el.innerHTML = `<thead><tr><th>Agent</th>${days.map((d) => `<th class="day${[0, 6].includes(d.getDay()) ? " weekend" : ""}">${d.toLocaleDateString(undefined, { weekday: "short" })}<br>${fmtDate(d)}</th>`).join("")}<th class="num">Total</th><th class="num">Avg / active day</th></tr></thead>
     <tbody>${agents.map((a) => {
       let total = 0, active = 0;
       const tds = keys.map((d) => {
         const c = cell[a + "|" + d];
-        const ok = c?.ok || 0, bad = c?.bad || 0;
+        const ok = c?.n || 0, nb = c?.bad || 0;
         total += ok; if (ok) active++;
         const cls = ok >= DAILY_TARGET ? "met" : ok > 0 ? "under" : "off";
-        const label = `${a}, ${d}: ${ok} successful${bad ? `, ${bad} not counted` : ""}`;
-        return `<td class="cell ${cls}" title="${esc(label)}"><span class="n">${ok || (activeDay[d] ? "0" : "–")}</span>${bad ? `<span class="x">+${bad} not counted</span>` : ""}</td>`;
+        const parts = c ? Object.keys(KINDS).filter((k) => c.by[k]).map((k) => `${c.by[k]} ${KINDS[k].label.toLowerCase()}`) : [];
+        const label = `${a}, ${d}: ${ok} calls${parts.length ? ` (${parts.join(", ")})` : ""}${nb ? `, ${nb} rows not counted` : ""}`;
+        return `<td class="cell ${cls}" title="${esc(label)}"><span class="n">${ok || (activeDay[d] ? "0" : "–")}</span>${nb ? `<span class="x">+${nb} not counted</span>` : ""}</td>`;
       }).join("");
       return `<tr><td>${esc(a)}</td>${tds}<td class="num"><strong>${total}</strong></td><td class="num">${active ? (total / active).toFixed(1) : "–"}</td></tr>`;
     }).join("")}</tbody>`;
 }
 
-function renderAgents(rows) {
-  const NA = "(no agent)";
+function renderAgents(rows, cs) {
   const m = new Map();
+  const get = (k) => m.get(k) || (m.set(k, { agent: k, total: 0, sales: 0, followup: 0, react: 0, lead: 0, late: 0, bad: 0, ok: 0, complete: 0, dm: 0, interested: 0, won: 0, days: new Map() }), m.get(k));
+  cs.forEach((c) => {
+    const a = get(c.agent || NA);
+    a.total++; a[c.kind]++;
+    if (c.kind === "followup" && c.e.fuLateDays > 0) a.late++;
+    const d = iso(c.date); a.days.set(d, (a.days.get(d) || 0) + 1);
+  });
   rows.forEach((r) => {
-    const k = r.agent || NA;
-    const a = m.get(k) || { agent: k, ok: 0, bad: 0, complete: 0, sales: 0, react: 0, lead: 0, dm: 0, interested: 0, won: 0, days: new Map() };
-    if (r.successful) {
-      a.ok++; a[r.src]++; if (r.complete) a.complete++; if (r.dm) a.dm++;
-      const d = iso(r.date); a.days.set(d, (a.days.get(d) || 0) + 1);
-    } else a.bad++;
+    const a = get(r.agent || NA);
+    if (r.successful) { a.ok++; if (r.complete) a.complete++; if (r.dm && r.src === "sales") a.dm++; } else a.bad++;
     if (r.interested) a.interested++;
     a.won += r.won;
-    m.set(k, a);
   });
-  const list = [...m.values()].sort((a, b) => b.ok - a.ok);
-  const max = Math.max(1, ...list.map((a) => a.ok));
+  const list = [...m.values()].sort((a, b) => b.total - a.total);
+  const max = Math.max(1, ...list.map((a) => a.total));
   const el = document.getElementById("agents");
   if (!list.length) { el.innerHTML = `<tr><td class="empty">No activity in this period.</td></tr>`; return; }
   const overdueBy = {};
   entries.filter((e) => e.overdue).forEach((e) => { const k = e.agent || NA; overdueBy[k] = (overdueBy[k] || 0) + 1; });
-  el.innerHTML = `<thead><tr><th>Agent</th><th class="num">Successful calls</th><th class="num">Avg / active day</th><th class="num">Days at ${DAILY_TARGET}+</th><th class="num">Not counted</th><th class="num">Complete</th><th class="num">Sales / React / Lead</th><th class="num">DM reached</th><th class="num">Interested</th><th class="num">Overdue FU</th><th class="num">Won revenue</th></tr></thead>
+  el.innerHTML = `<thead><tr><th>Agent</th><th class="num">Total calls</th><th class="num">Sales</th><th class="num">Follow-ups</th><th class="num">Reactivation</th><th class="num">Avg / active day</th><th class="num">Days at ${DAILY_TARGET}+</th><th class="num">Not counted</th><th class="num">Complete</th><th class="num">Overdue FU</th><th class="num">DM reached</th><th class="num">Interested</th><th class="num">Won revenue</th></tr></thead>
     <tbody>${list.map((a) => {
       const activeDays = a.days.size;
       const met = [...a.days.values()].filter((n) => n >= DAILY_TARGET).length;
@@ -597,14 +651,16 @@ function renderAgents(rows) {
       const od = overdueBy[a.agent] || 0;
       return `<tr>
         <td>${esc(a.agent)}</td>
-        <td class="num"><div class="inbar"><span class="b" style="width:${Math.round(80 * a.ok / max)}px"></span><strong>${a.ok}</strong></div></td>
-        <td class="num">${activeDays ? (a.ok / activeDays).toFixed(1) : "–"}</td>
+        <td class="num"><div class="inbar"><span class="b" style="width:${Math.round(80 * a.total / max)}px"></span><strong>${a.total}</strong></div></td>
+        <td class="num">${a.sales}</td>
+        <td class="num">${a.followup}${a.late ? ` <span class="pill warn">${a.late} late</span>` : ""}</td>
+        <td class="num">${a.react}</td>
+        <td class="num">${activeDays ? (a.total / activeDays).toFixed(1) : "–"}</td>
         <td class="num">${met} / ${activeDays}</td>
         <td class="num">${a.bad ? `<span class="pill bad">${a.bad}</span>` : "0"}</td>
         <td class="num">${a.ok ? `<span class="pill ${pctCls}">${pct}%</span>` : "–"}</td>
-        <td class="num">${a.sales} / ${a.react} / ${a.lead}</td>
-        <td class="num">${a.dm}</td><td class="num">${a.interested}</td>
         <td class="num">${od ? `<span class="pill bad">${od}</span>` : "0"}</td>
+        <td class="num">${a.dm}</td><td class="num">${a.interested}</td>
         <td class="num">${money(a.won)}</td>
       </tr>`;
     }).join("")}</tbody>`;
@@ -614,14 +670,15 @@ function renderFollowups() {
   const t = today();
   const overdue = entries.filter((e) => e.overdue && byAgent(e)).sort((a, b) => a.fu - b.fu);
   const counts = {};
-  overdue.forEach((e) => { const k = e.agent || "(no agent)"; counts[k] = (counts[k] || 0) + 1; });
+  overdue.forEach((e) => { const k = e.agent || NA; counts[k] = (counts[k] || 0) + 1; });
   document.getElementById("fuNote").innerHTML = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="pill bad">${esc(k)} ${n}</span>`).join(" ");
   const el = document.getElementById("followups");
-  el.innerHTML = overdue.length ? `<thead><tr><th>Due</th><th>Late by</th><th>Agent</th><th>Company</th><th>Outcome</th><th>Stage</th><th class="num">Row</th></tr></thead>
+  el.innerHTML = overdue.length ? `<thead><tr><th>Due</th><th>Late by</th><th>Agent</th><th>Company</th><th>Status</th><th>First call outcome</th><th class="num">Row</th></tr></thead>
     <tbody>${overdue.map((f) => `<tr>
       <td class="overdue">${fmtDate(f.fu)}</td><td>${plural(Math.round((t - f.fu) / DAY), "day")}</td>
-      <td>${esc(f.agent)}</td><td>${esc(f.company)}</td><td>${esc(f.outcome)}</td>
-      <td>${f.stage ? `<span class="pill">${esc(f.stage)}</span>` : ""}</td><td class="num">${f.row || ""}</td>
+      <td>${esc(f.agent)}</td><td>${esc(f.company)}</td>
+      <td>${f.fuStatus ? `<span class="pill">${esc(cleanValue(f.fuStatus))}</span>` : "—"}</td><td>${esc(f.outcome)}</td>
+      <td class="num">${f.row || ""}</td>
     </tr>`).join("")}</tbody>` : `<tr><td class="empty">No overdue follow-ups.</td></tr>`;
 
   const missing = entries.filter((e) => e.src === "sales" && byAgent(e) && e.interested && !e.fuRaw && !/closed/i.test(e.stage)).sort((a, b) => (b.date || 0) - (a.date || 0));
@@ -635,11 +692,17 @@ function renderFollowups() {
 const CHECKS = [
   { id: "shell", sev: "bad", title: "Empty row: only a date was filled", why: "No phone, company, outcome or summary. Delete the row or fill in the call.",
     test: (e) => e.shell, detail: () => "" },
-  { id: "nophone", sev: "bad", title: "Call logged, but no phone number", why: "Has call details but no phone number, so it is not counted as a successful call.",
-    test: (e) => e.date && e.phone === "" && !e.shell },
+  { id: "nophone", sev: "bad", title: "Call logged, but no phone number", why: "Has call details but no phone number, so it is not counted as a call.",
+    test: (e) => e.src !== "react" && e.date && e.phone === "" && !e.shell },
   { id: "badphone", sev: "bad", title: "Phone number looks wrong", why: "Fewer than 7 digits. Not counted.",
-    test: (e) => e.phone === "invalid" },
-  { id: "nodate", sev: "bad", title: "No date", why: "Can't be placed on a day. Not counted.",
+    test: (e) => e.src !== "react" && e.phone === "invalid" },
+  { id: "reactnostatus", sev: "bad", title: "Reactivation: date called, but no status", why: "A reactivation call needs both. Not counted.",
+    test: (e) => e.src === "react" && e.date && !e.status },
+  { id: "fudonenodate", sev: "bad", title: "Follow-up marked done, but no follow-up date", why: "Can't be placed on a day. Not counted as a follow-up call.",
+    test: (e) => e.fuCalled && !e.fu && !e.fuDoneOn, detail: (e) => `Follow-up Status: "${e.fuStatus}"` },
+  { id: "fuearly", sev: "warn", title: "Follow-up marked done before its planned date", why: "Counted on today. Check the date in Next Follow-up Date.",
+    test: (e) => e.fuCalled && !e.fuDoneOn && e.fu && e.fu > today(), detail: (e) => `Planned ${fmtDate(e.fu)}, status "${e.fuStatus}"` },
+  { id: "nodate", sev: "bad", title: "No date", why: "Can't be placed on a day. Not counted. (Mostly Reactivation rows with a status but no Date called.)",
     test: (e) => !e.dateRaw },
   { id: "baddate", sev: "bad", title: "Date can't be read", why: "Use a format like 09-24-2026 or 24-Sep-2026.",
     test: (e) => e.dateRaw && !e.date, detail: (e) => `Date: "${e.dateRaw}"` },
@@ -716,17 +779,18 @@ function draw(id, config) {
   charts[id] = new Chart(document.getElementById(id), config);
 }
 
-function renderDaily(rows, from, to) {
+function renderDaily(cs, from, to) {
   const days = dayList(from, to);
   const keys = days.map(iso), labels = days.map(fmtDate);
   const surface = css("--surface");
-  const datasets = Object.entries(SOURCES).map(([src, s]) => {
+  const order = Object.keys(KINDS);
+  const datasets = order.map((kind, i) => {
     const counts = Object.fromEntries(keys.map((k) => [k, 0]));
-    rows.filter((r) => r.src === src && r.successful).forEach((r) => { const k = iso(r.date); if (k in counts) counts[k]++; });
+    cs.filter((c) => c.kind === kind).forEach((c) => { const k = iso(c.date); if (k in counts) counts[k]++; });
     return {
-      label: s.label, data: keys.map((k) => counts[k]), backgroundColor: css(s.color),
+      label: KINDS[kind].label, data: keys.map((k) => counts[k]), backgroundColor: css(KINDS[kind].color),
       borderColor: surface, borderWidth: { top: 2 }, borderSkipped: "bottom",
-      borderRadius: src === "lead" ? { topLeft: 4, topRight: 4 } : 0, maxBarThickness: 36,
+      borderRadius: i === order.length - 1 ? { topLeft: 4, topRight: 4 } : 0, maxBarThickness: 36,
     };
   });
   const opts = baseOptions();
@@ -766,12 +830,15 @@ function renderRecent(rows) {
   if (!list.length) { el.innerHTML = `<tr><td class="empty">No entries in this period.</td></tr>`; return; }
   const trunc = (s, n = 140) => (s.length > n ? s.slice(0, n) + "…" : s);
   const status = (r) => !r.successful ? `<span class="pill bad">Not counted</span>` : r.complete ? `<span class="pill good">Complete</span>` : `<span class="pill warn">No summary</span>`;
-  el.innerHTML = `<thead><tr><th>Date</th><th>Tab</th><th class="num">Row</th><th>Agent</th><th>Company / lead</th><th>Status</th><th>Outcome</th><th>Summary</th></tr></thead>
+  const fuCell = (r) => r.src !== "sales" || (!r.fuRaw && !r.fuStatus) ? "" :
+    r.fuCalled ? `<span class="pill good">${esc(cleanValue(r.fuStatus))} · ${fmtDate(r.fuCallDate) || "no date"}</span>` :
+    r.overdue ? `<span class="pill bad">Overdue · ${fmtDate(r.fu)}</span>` : `<span class="pill">Due ${fmtDate(r.fu) || esc(r.fuRaw)}</span>`;
+  el.innerHTML = `<thead><tr><th>Date</th><th>Tab</th><th class="num">Row</th><th>Agent</th><th>Company / lead</th><th>Status</th><th>Outcome</th><th>Follow-up</th><th>Summary</th></tr></thead>
     <tbody>${list.map((r) => `<tr>
       <td>${fmtDate(r.date)}</td>
       <td><span class="dot" style="background:var(${SOURCES[r.src].color})"></span>${SOURCES[r.src].label}</td>
       <td class="num">${r.row || ""}</td>
-      <td>${esc(r.agent)}</td><td>${esc(r.company)}</td><td>${status(r)}</td><td>${esc(r.outcome)}</td>
+      <td>${esc(r.agent)}</td><td>${esc(r.company)}</td><td>${status(r)}</td><td>${esc(r.outcome)}</td><td>${fuCell(r)}</td>
       <td class="summary">${esc(trunc(r.summary || ""))}</td>
     </tr>`).join("")}</tbody>`;
 }

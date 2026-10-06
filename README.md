@@ -4,17 +4,37 @@ A live dashboard over the **Afriwork Master CRM** Google Sheet, built from three
 
 ## Definitions
 
-- **Successful call**: the row has a readable date **and** a phone number (7+ digits). Everything else is "not counted".
-- **Complete**: a successful call that also has a call summary.
-- **Empty row**: only a date (and maybe an agent) is filled in. These are usually rows pre-filled ahead of time. They are flagged, never counted.
-- **Daily target**: 20 successful calls per agent per day.
+Three kinds of call count toward an agent's day:
 
-These live at the top of the `<script>` in `index.html` (`DAILY_TARGET`, `MIN_SUMMARY`, `AGENT_ALIASES`, `VALUE_FIXES`) if you want to change them.
+| Call | Tab | Counts when | Counted on |
+|---|---|---|---|
+| **Sales call** | Sales_call_log | `Date` is filled **and** `Phone Number Called` has 7+ digits | `Date` |
+| **Follow-up call** | Sales_call_log | `Follow-up Status` (col T) is **Done** or **no answer** | `Follow-up done on` if that column exists, otherwise the planned `Next Follow-up Date` (col R) |
+| **Reactivation call** | Reactivation | `Date called` **and** `Status` are filled | `Date called` |
+
+LEAD-GEN rows count when they have a `Contact date` and a phone number.
+
+- **Daily target**: 20 calls per agent per day, all kinds combined.
+- **Overdue follow-up**: `Next Follow-up Date` has passed and `Follow-up Status` is blank or Pending (and the deal isn't closed).
+- **Complete**: a counted row that also has a call summary.
+- **Empty row**: only a date (and maybe an agent) is filled in. Flagged, never counted.
+- A lead gets **one** follow-up. A second follow-up would overwrite the first.
+
+### Recording the real follow-up day
+
+Column R is the *planned* day. To count a follow-up on the day it was actually made, and to show how late it was:
+
+1. Add a column with the header **Follow-up done on** to Sales_call_log.
+2. Paste `apps-script/followup-timestamp.gs` into **Extensions → Apps Script** and save.
+
+From then on, setting `Follow-up Status` to Done / no answer stamps today's date in that column automatically. Older rows keep using the planned date.
+
+These live at the top of the `<script>` in `index.html` (`DAILY_TARGET`, `FOLLOWUP_CALLED`, `MIN_SUMMARY`, `AGENT_ALIASES`, `VALUE_FIXES`) if you want to change them.
 
 ## What it shows
 
-- KPI tiles: successful calls, rows not counted, % complete, agent-days at target, decision maker reach, interested, won revenue, overdue follow-ups, data warnings
-- **Successful calls per agent per day** grid (green = target met, amber = under), with "+N not counted" under each cell. Switch between all tabs or one tab.
+- KPI tiles: total calls, then sales / follow-up / reactivation calls separately; agent-days at target, rows not counted, overdue follow-ups, % complete, decision maker reach, won revenue, data warnings
+- **Calls per agent per day** grid (green = target met, amber = under), with "+N not counted" under each cell. Switch between all calls or one kind; hover a cell for the split.
 - Agent summary: average per active day, days at target, completeness %, overdue follow-ups
 - Overdue follow-ups (follow-up date passed, Follow-up Status not "Done"), and interested leads with no follow-up date
 - **Warnings and unfilled info**: each check lists the exact sheet row numbers to fix. It covers empty rows, missing or invalid phone numbers, missing dates, unreadable dates, missing summaries or outcomes, no agent, revenue that doesn't match the stage, and more.
