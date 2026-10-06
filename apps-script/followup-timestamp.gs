@@ -8,15 +8,21 @@
  *
  * Setup (once):
  *   1. In the sheet, add a column header "Follow-up done on" (any free column, e.g. X).
- *   2. Extensions → Apps Script, paste this file, click Save.
- * It runs automatically for everyone who edits the sheet. No other setup needed.
+ *   2. Extensions → Apps Script → "+" next to Files → Script, name it followupTimestamp,
+ *      paste this file, click Save.
+ *   3. If another file in the project already has a function called onEdit, delete the
+ *      onEdit function at the bottom of THIS file and add this line inside the existing one:
+ *          stampFollowupDoneOn_(e);
+ *
+ * Every name here is unique so it can sit next to other scripts in the same project.
  */
-const TAB = "Sales_call_log";
-const STATUS_HEADER = "follow-up status";
-const DONE_ON_HEADER = "follow-up done on";
-const CALLED = ["done", "no answer"];
+function stampFollowupDoneOn_(e) {
+  const TAB = "Sales_call_log";
+  const STATUS_HEADER = "follow-up status";
+  const DONE_ON_HEADER = "follow-up done on";
+  const CALLED = ["done", "no answer"];
 
-function onEdit(e) {
+  if (!e || !e.range) return;
   const sheet = e.range.getSheet();
   if (sheet.getName() !== TAB) return;
 
@@ -42,4 +48,9 @@ function onEdit(e) {
     if (CALLED.includes(status) && !done[i][0]) { done[i][0] = new Date(); changed = true; }
   }
   if (changed) doneCells.setValues(done).setNumberFormat("dd-mmm-yyyy");
+}
+
+// Delete this function if your project already has an onEdit (see step 3 above).
+function onEdit(e) {
+  stampFollowupDoneOn_(e);
 }
